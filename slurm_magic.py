@@ -3,15 +3,13 @@ from __future__ import print_function
 
 import inspect
 import io
-from subprocess import (Popen, PIPE)
-import sys
+import os
 
 import pandas
+import paramiko
 
 from IPython.core.magic import (Magics, magics_class, line_magic, cell_magic,
         line_cell_magic)
-from IPython.core.magic_arguments import (argument, magic_arguments,
-        parse_argstring)
 
 
 def modal(func):
@@ -32,6 +30,7 @@ class SlurmMagics(Magics):
     def __init__(self, shell=None, **kwargs):
         super(SlurmMagics, self).__init__(shell, **kwargs)
         self._display = "pandas"
+        self.ssh_client = None
 
     @line_magic
     def slurm(self, line):
@@ -159,14 +158,26 @@ class SlurmMagics(Magics):
         """Graphical user interface to view and modify Slurm state."""
         pass
 
-    def _execute(self, line, input=None, stderr=False):
+    def _execute(self, line, input=None):
         name = inspect.stack()[1][3]
-        process = Popen([name] + line.split(), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        stdout, stderr = process.communicate(input)
-        if stderr:
-            return stdout.decode("utf-8"), stderr.decode("utf-8")
+        
+        if self.ssh_client is None:
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.connect(os.environ['slurm_hostname'], username=os.environ['slurm_username'], password=os.environ['slurm_password'])
+
+        _, ssh_stdout, ssh_stderr = self.ssh_client.exec_command(self.format_input(input) + name + line)
+        errors = ssh_stderr.read().decode('ascii').strip("\n")
+
+        if errors:
+            return errors
         else:
-            return stdout.decode("utf-8")
+            return ssh_stdout.read().decode('ascii').strip("\n")
+
+
+    @staticmethod
+    def format_input(input=None):
+        return "printf '%s' " + '$"' + input.decode('utf-8') + '" | '
 
 
 def load_ipython_extension(ip):

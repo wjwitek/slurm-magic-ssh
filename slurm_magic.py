@@ -158,6 +158,30 @@ class SlurmMagics(Magics):
         """Graphical user interface to view and modify Slurm state."""
         pass
 
+    @line_cell_magic
+    def swritefile(self, line, cell=None):
+        if cell is None:
+            return ":("
+        # write file
+        contents = cell.encode(encoding='UTF-8')
+        file = open('./temp', 'w')
+        file.write(str(contents))
+        file.close()
+
+        # open client
+        if self.ssh_client is None:
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.ssh_client.connect(os.environ['slurm_hostname'], username=os.environ['slurm_username'], password=os.environ['slurm_password'])
+
+        # transfer file
+        ftp_client = self.ssh_client.open_sftp()
+        ftp_client.put('./temp', line.strip())
+        ftp_client.close()
+
+        # delete file
+        os.remove('./temp')
+
     def _execute(self, line, input=None):
         name = inspect.stack()[1][3]
         
